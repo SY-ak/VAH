@@ -10,10 +10,14 @@ st.set_page_config(page_title="AI 대본 생성기", layout="wide")
 from streamlit_javascript import st_javascript
 
 def get_local_storage(key):
-    return st_javascript(f"localStorage.getItem('{key}');")
+    val = st_javascript(f"localStorage.getItem('{key}');")
+    if isinstance(val, str) and val.strip():
+        return val.strip()
+    return ""
 
 def set_local_storage(key, val):
-    st_javascript(f"localStorage.setItem('{key}', '{val}');")
+    safe_val = val.replace("'", "\\'")
+    st_javascript(f"localStorage.setItem('{key}', '{safe_val}');")
 
 def clear_local_storage(key):
     st_javascript(f"localStorage.removeItem('{key}');")
@@ -44,10 +48,15 @@ if "current_script" not in st.session_state:
     st.session_state.current_script = ""
 if "prev_main_category" not in st.session_state:
     st.session_state.prev_main_category = "랜덤 선택"
-if "show_manage_keys" not in st.session_state:
-    st.session_state.show_manage_keys = False
 if "custom_url" not in st.session_state:
     st.session_state.custom_url = ""
+if "show_key_input" not in st.session_state:
+    st.session_state.show_key_input = False
+# 각 AI 서비스별 키를 session_state에 저장
+for p in AI_PROVIDERS:
+    skey = f"session_api_key_{p}"
+    if skey not in st.session_state:
+        st.session_state[skey] = ""
 
 # --- 2. 상단 헤더 및 AI 설정 (Popover) ---
 col_title, col_setup = st.columns([4, 1])
@@ -59,7 +68,7 @@ with col_setup:
     with st.popover("⚙️ AI 설정"):
         ai_provider = st.selectbox("사용할 AI 서비스", AI_PROVIDERS)
 
-        # 로컬 AI 전용 설정 (Base URL)
+        # 로컬 AI 전용 설정
         if ai_provider == "기타 / 로컬 AI (OpenAI 호환)":
             st.session_state.custom_url = st.text_input(
                 "API Base URL",
@@ -67,41 +76,52 @@ with col_setup:
                 placeholder="예: http://localhost:11434/v1"
             )
 
-        # ✅ 핵심 변경: 파일 대신 localStorage에서만 키를 읽어옴
-        storage_key = f"api_key_{ai_provider}"
-        stored_key_raw = get_local_storage(storage_key)
+        session_key_name = f"session_api_key_{ai_provider}"
+        ls_key_name = f"api_key_{ai_provider}"
 
-        # localStorage는 값이 없을 때 0 또는 None을 반환하므로 문자열인지 확인
-        if isinstance(stored_key_raw, str) and stored_key_raw.strip():
-            current_key = stored_key_raw.strip()
-        else:
-            current_key = ""
+        # 앱 시작 시 localStorage → session_state로 한 번만 복원
+        # (session_state가 비어있을 때만 시도)
+        if not st.session_state[session_key_name]:
+            ls_val = get_local_storage(ls_key_name)
+            if ls_val:
+                st.session_state[session_key_name] = ls_val
+
+        current_key = st.session_state[session_key_name]
 
         st.write("---")
         st.markdown("### 🔑 API 키 관리")
 
         if current_key:
             st.success(f"✅ 키 등록됨: `{current_key[:6]}...{current_key[-4:]}`")
-            st.caption("이 키는 내 브라우저에만 저장됩니다. 다른 사람과 공유되지 않습니다.")
+            st.caption("이 키는 내 브라우저에만 저장됩니다.")
 
-            col_a, col_b = st.columns([1, 1])
+            col_a, col_b = st.columns(2)
             with col_a:
                 if st.button("🗑️ 키 삭제", use_container_width=True):
-                    clear_local_storage(storage_key)
+                    st.session_state[session_key_name] = ""
+                    clear_local_storage(ls_key_name)
                     st.rerun()
             with col_b:
                 if st.button("🔄 키 교체", use_container_width=True):
-                    st.session_state.show_manage_keys = True
-        else:
-            st.info("등록된 키가 없습니다. 아래에서 키를 추가하세요.")
-            st.session_state.show_manage_keys = True
+                    st.session_state.show_key_input = True
+                    st.rerun()
 
-        if st.session_state.show_manage_keys or not current_key:
-            new_key = st.text_input("새 API 키 입력", type="password", placeholder="sk-... 또는 AIza...")
+        if not current_key or st.session_state.show_key_input:
+            if not current_key:
+                st.info("등록된 키가 없습니다.")
+            new_key = st.text_input(
+                "새 API 키 입력",
+                type="password",
+                placeholder="sk-... 또는 AIza...",
+                key="new_key_input"
+            )
             if st.button("➕ 등록하기", use_container_width=True):
                 if new_key and new_key.strip():
-                    set_local_storage(storage_key, new_key.strip())
-                    st.session_state.show_manage_keys = False
+                    # session_state에 즉시 저장 (타이밍 문제 해결 핵심)
+                    st.session_state[session_key_name] = new_key.strip()
+                    # localStorage에도 백업 저장 (탭 닫아도 유지)
+                    set_local_storage(ls_key_name, new_key.strip())
+                    st.session_state.show_key_input = False
                     st.rerun()
                 else:
                     st.warning("키를 입력해주세요.")
@@ -140,11 +160,9 @@ with st.sidebar:
 
 # --- 4. AI 호출 함수 ---
 def call_ai(prompt):
-    # ✅ 핵심 변경: localStorage에서 읽은 키를 세션 상태로 전달받아 사용
-    key = st.session_state.get("_current_api_key", "")
+    key = st.session_state.get(f"session_api_key_{ai_provider}", "")
     if not key:
         return None
-
     try:
         if ai_provider == "Google Gemini":
             client = genai.Client(api_key=key)
@@ -155,7 +173,7 @@ def call_ai(prompt):
                 model=selected_model,
                 messages=[{"role": "user", "content": prompt}]
             ).choices[0].message.content
-        else:  # 로컬 AI
+        else:
             client = OpenAI(api_key=key, base_url=st.session_state.custom_url)
             res = client.chat.completions.create(
                 model=selected_model,
@@ -171,14 +189,10 @@ def call_ai(prompt):
         else:
             return f"API_ERROR:{error_msg}"
 
-# 현재 키를 세션에 저장 (call_ai에서 사용하기 위해)
-if current_key:
-    st.session_state["_current_api_key"] = current_key
-else:
-    st.session_state["_current_api_key"] = ""
-
 # --- 5. 대본 생성 메인 로직 ---
-if not current_key:
+current_key_main = st.session_state.get(f"session_api_key_{ai_provider}", "")
+
+if not current_key_main:
     st.warning("⚙️ 오른쪽 상단의 **AI 설정**에서 API 키를 먼저 등록해주세요.")
 else:
     if st.button("✨ 새로운 대본 생성하기", use_container_width=True):
