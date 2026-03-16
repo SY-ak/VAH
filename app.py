@@ -4,18 +4,24 @@ from openai import OpenAI
 import os
 import speech_recognition as sr
 import random
+from streamlit_javascript import st_javascript 
 
 # 1. 페이지 설정
 st.set_page_config(page_title="AI 대본 생성기", layout="wide")
 
-# 카테고리 및 가이드 데이터
+# ✅ 브라우저 전용 저장소 함수 (서버 파일 저장 로직 삭제)
+def get_local_storage(key):
+    return st_javascript(f"localStorage.getItem('{key}');")
+
+def set_local_storage(key, val):
+    st_javascript(f"localStorage.setItem('{key}', '{val}');")
+
+# 카테고리 데이터 (기존 유지)
 CATEGORIES = {
     "애니메이션": ["판타지", "액션", "일상", "로맨스", "SF", "코미디", "스포츠", "시대극"],
     "내레이션": ["다큐멘터리", "드라마", "오디오북"],
-    "게임": [], 
-    "광고": ["상업광고", "공익광고", "기업홍보"],
-    "라디오 드라마": [],
-    "어색한 대본": []
+    "게임": [], "광고": ["상업광고", "공익광고", "기업홍보"],
+    "라디오 드라마": [], "어색한 대본": []
 }
 
 GENRE_GUIDES = {
@@ -27,119 +33,93 @@ GENRE_GUIDES = {
     "어색한 대본": "순발력과 발음 교정 훈련용."
 }
 
-KEY_FILES = {
-    "Google Gemini": "keys_gemini.txt", 
-    "OpenAI (ChatGPT)": "keys_openai.txt",
-    "기타 / 로컬 AI (OpenAI 호환)": "keys_custom.txt"
-}
-
-def load_keys(filename):
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            return [line.strip() for line in f.readlines() if line.strip()]
-    return []
-
-def save_keys(filename, keys):
-    with open(filename, "w", encoding="utf-8") as f:
-        for k in keys: f.write(k + "\n")
-
 # 세션 상태 초기화
 if "current_script" not in st.session_state: st.session_state.current_script = ""
 if "prev_main_category" not in st.session_state: st.session_state.prev_main_category = "랜덤 선택"
 if "show_manage_keys" not in st.session_state: st.session_state.show_manage_keys = False
 if "custom_url" not in st.session_state: st.session_state.custom_url = ""
 
-# --- 2. 상단 헤더 및 AI 설정 (Popover) ---
+# --- 2. 상단 헤더 및 AI 설정 ---
 col_title, col_setup = st.columns([4, 1])
-
 with col_title:
     st.title("🎙️ AI 대본 생성기")
 
 with col_setup:
     with st.popover("⚙️ AI 설정"):
-        ai_provider = st.selectbox("사용할 AI 서비스", list(KEY_FILES.keys()))
+        ai_providers = ["Google Gemini", "OpenAI (ChatGPT)", "기타 / 로컬 AI (OpenAI 호환)"]
+        ai_provider = st.selectbox("사용할 AI 서비스", ai_providers)
         
-        # ✅ 로컬 AI 전용 설정 (Base URL)
         if ai_provider == "기타 / 로컬 AI (OpenAI 호환)":
-            st.session_state.custom_url = st.text_input("API Base URL", value=st.session_state.custom_url, placeholder="예: http://localhost:11434/v1")
+            st.session_state.custom_url = st.text_input("API Base URL", value=st.session_state.custom_url)
         
-        target_file = KEY_FILES[ai_provider]
-        keys = load_keys(target_file)
-        
+        # ✅ [핵심] 서버 파일 대신 브라우저 저장소에서만 키를 읽어옴
+        stored_key = get_local_storage(f"stored_key_{ai_provider}")
+        keys = [stored_key] if (stored_key and stored_key != "null") else []
+
         st.write("---")
         st.markdown("### 🔑 API 키 관리")
-        if keys:
-            if f"active_idx_{ai_provider}" not in st.session_state: st.session_state[f"active_idx_{ai_provider}"] = 0
-            current_idx = min(st.session_state[f"active_idx_{ai_provider}"], len(keys)-1)
-            key_labels = [f"{i+1}번 키" for i in range(len(keys))]
-            choice = st.selectbox("현재 사용 키", range(len(keys)), index=current_idx, format_func=lambda x: key_labels[x])
-            st.session_state[f"active_idx_{ai_provider}"] = choice
-            
-            if st.button("👁️ 키 상세 보기/관리"):
-                st.session_state.show_manage_keys = not st.session_state.show_manage_keys
-            if st.session_state.show_manage_keys:
-                for idx, k in enumerate(keys):
-                    c1, c2 = st.columns([3, 1])
-                    c1.code(f"{k[:6]}...{k[-4:]}", language=None)
-                    if c2.button("🗑️", key=f"del_{idx}"):
-                        keys.pop(idx); save_keys(target_file, keys); st.rerun()
-        else:
-            st.info("등록된 키가 없습니다.")
-
-        new_key = st.text_input("새 API 키 추가", type="password")
-        if st.button("➕ 등록", use_container_width=True):
-            if new_key and new_key not in keys:
-                keys.append(new_key); save_keys(target_file, keys); st.rerun()
         
-        # ✅ 모델 선택 분기 (로컬 AI 시 GPT 옵션 제거)
+        if keys:
+            st.success("✅ 브라우저에 키가 안전하게 저장되어 있습니다.")
+            if st.button("👁️ 등록된 키 보기/삭제"):
+                st.session_state.show_manage_keys = not st.session_state.show_manage_keys
+            
+            if st.session_state.show_manage_keys:
+                c1, c2 = st.columns([3, 1])
+                c1.code(f"{keys[0][:6]}...{keys[0][-4:]}", language=None)
+                if c2.button("🗑️ 삭제"):
+                    set_local_storage(f"stored_key_{ai_provider}", "") # 브라우저 저장소 비움
+                    st.rerun()
+        else:
+            st.info("등록된 키가 없습니다. 본인의 API 키를 입력해주세요.")
+
+        new_key = st.text_input("새 API 키 등록 (내 브라우저에만 저장)", type="password")
+        if st.button("➕ 등록 및 기억하기", use_container_width=True):
+            if new_key:
+                set_local_storage(f"stored_key_{ai_provider}", new_key) # 브라우저 저장소에 기록
+                st.rerun()
+        
+        # 모델 선택
         if ai_provider == "Google Gemini":
             selected_model = st.selectbox("모델", ["gemini-2.5-flash", "gemini-2.0-flash"])
         elif ai_provider == "OpenAI (ChatGPT)":
             selected_model = st.selectbox("모델", ["gpt-4o-mini", "gpt-4o"])
         else:
-            selected_model = st.text_input("모델 명칭", value="llama3", placeholder="사용할 모델 이름을 입력하세요")
+            selected_model = st.text_input("모델 명칭", value="llama3")
 
-# --- 3. 사이드바: 대본 설정 ---
+# --- 3. 사이드바 및 4. AI 호출 ---
 with st.sidebar:
     st.markdown("### 🎭 대본 설정")
     user_gender = st.radio("나의 성별", ["남성", "여성"], horizontal=True)
-    main_cat_list = ["랜덤 선택"] + list(CATEGORIES.keys())
-    main_category = st.selectbox("🎯 대분류 선택", main_cat_list)
+    main_category = st.selectbox("🎯 대분류 선택", ["랜덤 선택"] + list(CATEGORIES.keys()))
     
     if main_category != st.session_state.prev_main_category:
-        st.session_state.current_script = ""
-        st.session_state.prev_main_category = main_category
+        st.session_state.current_script = ""; st.session_state.prev_main_category = main_category
     
     sub_category = None
     if main_category != "랜덤 선택":
         sub_items = CATEGORIES.get(main_category, [])
         if sub_items: sub_category = st.selectbox(f"📂 세부 항목", ["랜덤"] + sub_items)
-
     has_partner = main_category in ["애니메이션", "라디오 드라마"] and st.checkbox("상대 배역 포함", value=True)
 
-# --- 4. AI 호출 함수 ---
 def call_ai(prompt):
-    current_keys = load_keys(KEY_FILES[ai_provider])
-    if not current_keys: return None
-    start_idx = st.session_state.get(f"active_idx_{ai_provider}", 0)
-    for i in range(len(current_keys)):
-        idx = (start_idx + i) % len(current_keys)
-        try:
-            if ai_provider == "Google Gemini":
-                client = genai.Client(api_key=current_keys[idx])
-                res = client.models.generate_content(model=selected_model, contents=prompt).text
-            elif ai_provider == "OpenAI (ChatGPT)":
-                client = OpenAI(api_key=current_keys[idx])
-                res = client.chat.completions.create(model=selected_model, messages=[{"role": "user", "content": prompt}]).choices[0].message.content
-            else: # 로컬 AI
-                client = OpenAI(api_key=current_keys[idx], base_url=st.session_state.custom_url)
-                res = client.chat.completions.create(model=selected_model, messages=[{"role": "user", "content": prompt}]).choices[0].message.content
-            st.session_state[f"active_idx_{ai_provider}"] = idx
-            return res
-        except Exception: continue
-    return "API_QUOTA_EXHAUSTED"
+    # ✅ 브라우저에서 가져온 키를 즉시 사용
+    if not keys or not keys[0]: return "NO_KEY"
+    
+    try:
+        if ai_provider == "Google Gemini":
+            client = genai.Client(api_key=keys[0])
+            return client.models.generate_content(model=selected_model, contents=prompt).text
+        elif ai_provider == "OpenAI (ChatGPT)":
+            client = OpenAI(api_key=keys[0])
+            return client.chat.completions.create(model=selected_model, messages=[{"role": "user", "content": prompt}]).choices[0].message.content
+        else:
+            client = OpenAI(api_key=keys[0], base_url=st.session_state.custom_url)
+            return client.chat.completions.create(model=selected_model, messages=[{"role": "user", "content": prompt}]).choices[0].message.content
+    except Exception as e:
+        return f"ERROR: {str(e)}"
 
-# --- 5. 대본 생성 메인 로직 ---
+# --- 5. 대본 생성 및 출력 ---
 if st.button("✨ 새로운 대본 생성하기", use_container_width=True):
     final_main = main_category if main_category != "랜덤 선택" else random.choice(list(CATEGORIES.keys()))
     final_sub = sub_category if sub_category not in ["랜덤", None] else (random.choice(CATEGORIES[final_main]) if CATEGORIES[final_main] else "")
@@ -147,35 +127,21 @@ if st.button("✨ 새로운 대본 생성하기", use_container_width=True):
     p_style = "2인극" if has_partner else "1인극"
     genre_guide = GENRE_GUIDES.get(final_main, "")
     
-    prompt = f"""
-성우 공채 전문 작가로서 [{final_main}] 장르 대본을 집필하라. 
-장르: {final_main} {sub_text}, 스타일: {p_style}.
-
-[작성 지침]:
-1. 캐릭터 설정: **이름 (나이, 성별, 외형, 말투)** 형식으로 한 줄 요약하라.
-2. 대사는 7~10줄 내외로 작성하며 호흡 단위로 빈번하게 줄바꿈(\n\n)하라.
-3. 지문은 `:gray[*(지문)*]` 형식으로 1~2단어 이내로만, 대본 전체에서 2~3회만 아주 드물게 사용하라.
-4. 이름 색상: 2인극일 경우 첫 번째 캐릭터는 **:blue[이름]**, 두 번째 캐릭터는 **:green[이름]**으로 표시하라. 1인극은 **:blue[이름]**만 사용.
-5. HTML 태그 사용 금지. {genre_guide}
-
-양식:
-### 📋 캐릭터 정보
-### 📖 연습 대본
-"""
-    with st.spinner("AI가 연습용 대본을 생성중입니다..."):
+    prompt = f"[{final_main}] {sub_text} 장르 성우 대본 작성. 스타일: {p_style}. {genre_guide} 양식: ### 📋 캐릭터 정보\n### 📖 연습 대본"
+    
+    with st.spinner("AI가 대본을 생성중입니다..."):
         result = call_ai(prompt)
-        if result == "API_QUOTA_EXHAUSTED": st.error("🚫 모든 API 키의 할당량이 소진되었습니다.")
-        elif result: st.session_state.current_script = result; st.rerun()
+        if result == "NO_KEY": st.error("⚙️ AI 설정에서 API 키를 먼저 등록해주세요.")
+        elif "ERROR" in result: st.error(f"API 호출 중 오류가 발생했습니다. 키를 확인해주세요. ({result})")
+        else: st.session_state.current_script = result; st.rerun()
 
 if st.session_state.current_script:
     st.markdown(st.session_state.current_script)
     st.divider()
-    st.markdown("### 🎤 내 낭독 인식 내용")
     audio_value = st.audio_input("연습 녹음")
     if audio_value:
         try:
             r = sr.Recognizer()
-            with sr.AudioFile(audio_value) as source:
-                audio_data = r.record(source)
+            with sr.AudioFile(audio_value) as source: audio_data = r.record(source)
             st.write(f"🗣️ **인식 내용:** {r.recognize_google(audio_data, language='ko-KR')}")
-        except Exception: st.error("인식 실패")
+        except: st.error("인식 실패")
