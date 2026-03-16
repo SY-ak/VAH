@@ -2,3 +2,4 @@ streamlit
 google-genai
 openai
 SpeechRecognition
+streamlit-javascript

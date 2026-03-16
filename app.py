@@ -8,6 +8,14 @@ import random
 # 1. 페이지 설정
 st.set_page_config(page_title="AI 대본 생성기", layout="wide")
 
+from streamlit_javascript import st_javascript 
+
+def get_local_storage(key):
+    return st_javascript(f"localStorage.getItem('{key}');")
+
+def set_local_storage(key, val):
+    st_javascript(f"localStorage.setItem('{key}', '{val}');")
+
 # 카테고리 및 가이드 데이터
 CATEGORIES = {
     "애니메이션": ["판타지", "액션", "일상", "로맨스", "SF", "코미디", "스포츠", "시대극"],
@@ -66,6 +74,12 @@ with col_setup:
         target_file = KEY_FILES[ai_provider]
         keys = load_keys(target_file)
         
+# 저장된 키 불러오기
+        stored_key = get_local_storage(f"stored_key_{ai_provider}")
+        if stored_key and stored_key not in keys:
+            keys.append(stored_key)
+            save_keys(target_file, keys)
+
         st.write("---")
         st.markdown("### 🔑 API 키 관리")
         if keys:
@@ -82,14 +96,14 @@ with col_setup:
                     c1, c2 = st.columns([3, 1])
                     c1.code(f"{k[:6]}...{k[-4:]}", language=None)
                     if c2.button("🗑️", key=f"del_{idx}"):
-                        keys.pop(idx); save_keys(target_file, keys); st.rerun()
+                        keys.pop(idx); save_keys(target_file, keys); set_local_storage(f"stored_key_{ai_provider}", ""); st.rerun()
         else:
             st.info("등록된 키가 없습니다.")
 
         new_key = st.text_input("새 API 키 추가", type="password")
         if st.button("➕ 등록", use_container_width=True):
             if new_key and new_key not in keys:
-                keys.append(new_key); save_keys(target_file, keys); st.rerun()
+                keys.append(new_key); save_keys(target_file, keys); set_local_storage(f"stored_key_{ai_provider}", new_key); st.rerun()
         
         # ✅ 모델 선택 분기 (로컬 AI 시 GPT 옵션 제거)
         if ai_provider == "Google Gemini":
