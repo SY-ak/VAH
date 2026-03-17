@@ -1,4 +1,5 @@
 import streamlit as st
+import json  # 다중 키 저장을 위해 추가됨
 from google import genai
 from openai import OpenAI
 import speech_recognition as sr
@@ -43,20 +44,22 @@ GENRE_GUIDES = {
 
 AI_PROVIDERS = ["Google Gemini", "OpenAI (ChatGPT)", "기타 / 로컬 AI (OpenAI 호환)"]
 
-# 세션 상태 초기화
+# 세션 상태 초기화 (다중 키 지원으로 변경)
 if "current_script" not in st.session_state:
     st.session_state.current_script = ""
 if "prev_main_category" not in st.session_state:
     st.session_state.prev_main_category = "랜덤 선택"
 if "custom_url" not in st.session_state:
     st.session_state.custom_url = ""
-if "show_key_input" not in st.session_state:
-    st.session_state.show_key_input = False
-# 각 AI 서비스별 키를 session_state에 저장
+
+# 각 AI 서비스별 키 리스트 초기화 및 로컬 스토리지에서 한 번만 불러오기
+if "keys_loaded" not in st.session_state:
+    st.session_state.keys_loaded = False
+
 for p in AI_PROVIDERS:
-    skey = f"session_api_key_{p}"
+    skey = f"session_api_keys_{p}"
     if skey not in st.session_state:
-        st.session_state[skey] = ""
+        st.session_state[skey] = []
 
 # --- 2. 상단 헤더 및 AI 설정 (Popover) ---
 col_title, col_setup = st.columns([4, 1])
@@ -76,52 +79,64 @@ with col_setup:
                 placeholder="예: http://localhost:11434/v1"
             )
 
-        session_key_name = f"session_api_key_{ai_provider}"
-        ls_key_name = f"api_key_{ai_provider}"
+        session_key_name = f"session_api_keys_{ai_provider}"
+        ls_key_name = f"api_keys_{ai_provider}"
 
-        # 앱 시작 시 localStorage → session_state로 한 번만 복원
-        if not st.session_state[session_key_name]:
-            ls_val = get_local_storage(ls_key_name)
-            if ls_val:
-                st.session_state[session_key_name] = ls_val
+        # 앱 시작 시 localStorage에서 키 배열 복원
+        if not st.session_state.keys_loaded:
+            for p in AI_PROVIDERS:
+                ls_val = get_local_storage(f"api_keys_{p}")
+                if ls_val:
+                    try:
+                        st.session_state[f"session_api_keys_{p}"] = json.loads(ls_val)
+                    except json.JSONDecodeError:
+                        # 예전 버전의 단일 문자열 키를 배열로 자동 업그레이드
+                        if ls_val.strip():
+                            st.session_state[f"session_api_keys_{p}"] = [ls_val.strip()]
+            st.session_state.keys_loaded = True
 
-        current_key = st.session_state[session_key_name]
+        current_keys = st.session_state[session_key_name]
 
         st.write("---")
         st.markdown("### 🔑 API 키 관리")
 
-        if current_key:
-            st.success(f"✅ 키 등록됨: `{current_key[:6]}...{current_key[-4:]}`")
-            st.caption("이 키는 내 브라우저에만 저장됩니다.")
-
-            col_a, col_b = st.columns(2)
-            with col_a:
-                if st.button("🗑️ 키 삭제", use_container_width=True):
-                    st.session_state[session_key_name] = ""
-                    clear_local_storage(ls_key_name)
-                    st.rerun()
-            with col_b:
-                if st.button("🔄 키 교체", use_container_width=True):
-                    st.session_state.show_key_input = True
+        if current_keys:
+            st.success(f"✅ 등록된 키: {len(current_keys)}개")
+            st.caption("위에서부터 순서대로 사용되며, 할당량 초과 시 자동으로 다음 키로 전환됩니다.")
+            
+            # 다중 키 목록 보여주기 및 삭제
+            for i, k in enumerate(current_keys):
+                c1, c2 = st.columns([4, 1])
+                c1.code(f"[{i+1}] {k[:6]}...{k[-4:]}")
+                if c2.button("🗑️", key=f"del_{ai_provider}_{i}"):
+                    current_keys.pop(i)
+                    set_local_storage(ls_key_name, json.dumps(current_keys))
                     st.rerun()
 
-        if not current_key or st.session_state.show_key_input:
-            if not current_key:
-                st.info("등록된 키가 없습니다.")
-            new_key = st.text_input(
-                "새 API 키 입력",
-                type="password",
-                placeholder="sk-... 또는 AIza...",
-                key="new_key_input"
-            )
-            if st.button("➕ 등록하기", use_container_width=True):
-                if new_key and new_key.strip():
-                    st.session_state[session_key_name] = new_key.strip()
-                    set_local_storage(ls_key_name, new_key.strip())
-                    st.session_state.show_key_input = False
+            if st.button("🗑️ 모든 키 삭제", use_container_width=True):
+                st.session_state[session_key_name] = []
+                set_local_storage(ls_key_name, "[]")
+                st.rerun()
+        else:
+            st.info("등록된 키가 없습니다.")
+
+        # 여러 키를 연속해서 추가할 수 있는 입력창
+        new_key = st.text_input(
+            "새 API 키 추가",
+            type="password",
+            placeholder="sk-... 또는 AIza...",
+            key="new_key_input"
+        )
+        if st.button("➕ 등록하기", use_container_width=True):
+            if new_key and new_key.strip():
+                if new_key.strip() not in current_keys:
+                    current_keys.append(new_key.strip())
+                    set_local_storage(ls_key_name, json.dumps(current_keys))
                     st.rerun()
                 else:
-                    st.warning("키를 입력해주세요.")
+                    st.warning("이미 등록된 키입니다.")
+            else:
+                st.warning("키를 입력해주세요.")
 
         # 모델 선택
         st.write("---")
@@ -155,41 +170,65 @@ with st.sidebar:
 
     has_partner = main_category in ["애니메이션", "라디오 드라마"] and st.checkbox("상대 배역 포함", value=True)
 
-# --- 4. AI 호출 함수 ---
+# --- 4. AI 호출 및 자동 키 전환 함수 ---
 def call_ai(prompt):
-    key = st.session_state.get(f"session_api_key_{ai_provider}", "")
-    if not key:
-        return None
-    try:
-        if ai_provider == "Google Gemini":
-            client = genai.Client(api_key=key)
-            res = client.models.generate_content(model=selected_model, contents=prompt).text
-        elif ai_provider == "OpenAI (ChatGPT)":
-            client = OpenAI(api_key=key)
-            res = client.chat.completions.create(
-                model=selected_model,
-                messages=[{"role": "user", "content": prompt}]
-            ).choices[0].message.content
-        else:
-            client = OpenAI(api_key=key, base_url=st.session_state.custom_url)
-            res = client.chat.completions.create(
-                model=selected_model,
-                messages=[{"role": "user", "content": prompt}]
-            ).choices[0].message.content
-        return res
-    except Exception as e:
-        error_msg = str(e)
-        if "auth" in error_msg.lower() or "api key" in error_msg.lower() or "invalid" in error_msg.lower():
-            return "API_KEY_INVALID"
-        elif "quota" in error_msg.lower() or "limit" in error_msg.lower():
-            return "API_QUOTA_EXHAUSTED"
-        else:
-            return f"API_ERROR:{error_msg}"
+    keys = st.session_state.get(f"session_api_keys_{ai_provider}", [])
+    if not keys:
+        return "NO_KEYS"
+
+    last_error = ""
+
+    for i, key in enumerate(keys):
+        try:
+            if ai_provider == "Google Gemini":
+                client = genai.Client(api_key=key)
+                res = client.models.generate_content(model=selected_model, contents=prompt).text
+            elif ai_provider == "OpenAI (ChatGPT)":
+                client = OpenAI(api_key=key)
+                res = client.chat.completions.create(
+                    model=selected_model,
+                    messages=[{"role": "user", "content": prompt}]
+                ).choices[0].message.content
+            else:
+                client = OpenAI(api_key=key, base_url=st.session_state.custom_url)
+                res = client.chat.completions.create(
+                    model=selected_model,
+                    messages=[{"role": "user", "content": prompt}]
+                ).choices[0].message.content
+            return res  # 성공하면 바로 대본 반환
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            # 에러 확실히 분류: 할당량(Quota) 초과 문제인지 검사
+            if "quota" in error_msg or "limit" in error_msg or "429" in error_msg or "exhausted" in error_msg:
+                last_error = "API_QUOTA_EXHAUSTED"
+                if i < len(keys) - 1:
+                    st.toast(f"⚠️ {i+1}번 키 할당량 초과. {i+2}번 키로 자동 전환하여 시도합니다...", icon="🔄")
+                    continue  # 다음 키로 루프 계속
+                else:
+                    break  # 더 이상 남은 키가 없으면 종료
+            
+            # 에러 확실히 분류: 인증(Invalid Key) 문제인지 검사
+            elif "auth" in error_msg or "api key" in error_msg or "invalid" in error_msg or "401" in error_msg or "403" in error_msg:
+                last_error = "API_KEY_INVALID"
+                if i < len(keys) - 1:
+                    st.toast(f"⚠️ {i+1}번 키 인증 오류. {i+2}번 키로 자동 전환하여 시도합니다...", icon="🔄")
+                    continue
+                else:
+                    break
+                    
+            # 그 외 예상치 못한 서버 오류 등
+            else:
+                last_error = f"API_ERROR:{str(e)}"
+                break 
+
+    return last_error  # 모든 키가 실패했거나 치명적 오류 시 반환
 
 # --- 5. 대본 생성 메인 로직 ---
-current_key_main = st.session_state.get(f"session_api_key_{ai_provider}", "")
+current_keys_main = st.session_state.get(f"session_api_keys_{ai_provider}", [])
 
-if not current_key_main:
+if not current_keys_main:
     st.warning("⚙️ 오른쪽 상단의 **AI 설정**에서 API 키를 먼저 등록해주세요.")
 else:
     if st.button("✨ 새로운 대본 생성하기", use_container_width=True):
@@ -201,7 +240,6 @@ else:
         p_style = "2인극" if has_partner else "1인극"
         genre_guide = GENRE_GUIDES.get(final_main, "")
 
-        # ✅ 수정된 부분: 파이썬에서 4가지 연령대 중 하나를 동일한 확률로 선택
         age_categories = ["소년/소녀 (10대 이하)", "청년 (20~30대)", "중년 (40~50대)", "노년 (60대 이상)"]
         target_age_group = random.choice(age_categories)
 
@@ -213,10 +251,11 @@ else:
 1. 캐릭터 설정: **이름 (나이, 성별, 외형, 말투)** 형식으로 한 줄 요약하라.
    - 필수 조건 1: 메인 캐릭터의 성별은 반드시 **{user_gender}**으로 설정하라. (2인극일 경우 최소 1명은 {user_gender}이어야 함)
    - 필수 조건 2: 메인 캐릭터의 연령대는 반드시 **{target_age_group}** 캐릭터로만 설정하라.
-2. 대사는 7~10줄 내외로 작성하며, 텍스트에 '\\n' 기호를 직접 쓰지 말고 실제로 호흡 단위마다 줄바꿈(엔터)을 빈번하게 적용하여 문단을 나누어라.
-3. 지문은 `:gray[*(지문)*]` 형식으로 1~2단어 이내로만, 대본 전체에서 2~3회만 아주 드물게 사용하라.
-4. 이름 색상: 2인극일 경우 첫 번째 캐릭터는 **:blue[이름]**, 두 번째 캐릭터는 **:green[이름]**으로 표시하라. 1인극은 **:blue[이름]**만 사용.
-5. HTML 태그 사용 금지. {genre_guide}
+2. 분량 (절대 엄수): 전체 대사의 줄 수는 **무조건 최소 6줄 이상, 최대 10줄 이하**여야 한다. 5줄 이하로 짧게 끝내는 것을 절대 금지한다.
+3. 줄바꿈: 텍스트에 '\\n' 기호를 직접 쓰지 말고, 실제로 호흡 단위마다 줄바꿈(엔터)을 빈번하게 적용하여 문단을 나누어라.
+4. 지문: `:gray[*(지문)*]` 형식으로 1~2단어 이내로만, 대본 전체에서 2~3회만 아주 드물게 사용하라.
+5. 이름 색상: 2인극일 경우 첫 번째 캐릭터는 **:blue[이름]**, 두 번째 캐릭터는 **:green[이름]**으로 표시하라. 1인극은 **:blue[이름]**만 사용.
+6. HTML 태그 사용 금지. {genre_guide}
 
 양식:
 ### 📋 캐릭터 정보
@@ -224,12 +263,12 @@ else:
 """
         with st.spinner("AI가 연습용 대본을 생성중입니다..."):
             result = call_ai(prompt)
-            if result is None:
+            if result == "NO_KEYS":
                 st.error("API 키가 없습니다. AI 설정에서 키를 등록해주세요.")
             elif result == "API_KEY_INVALID":
-                st.error("🔑 API 키가 올바르지 않습니다. AI 설정에서 키를 확인해주세요.")
+                st.error("🔑 등록된 API 키가 유효하지 않습니다. 오타가 없는지 확인해주세요.")
             elif result == "API_QUOTA_EXHAUSTED":
-                st.error("🚫 API 사용량이 초과되었습니다. 잠시 후 다시 시도해주세요.")
+                st.error("🚫 등록된 모든 API 키의 할당량이 소진되었습니다. 새로운 키를 추가하거나 잠시 후 다시 시도해주세요.")
             elif result.startswith("API_ERROR:"):
                 st.error(f"오류 발생: {result.replace('API_ERROR:', '')}")
             else:
