@@ -82,6 +82,18 @@ with col_setup:
                 placeholder="예: http://localhost:11434/v1"
             )
 
+        # ✅ 수정된 부분: 모델 선택을 AI 서비스 선택 바로 아래로 이동
+        if ai_provider == "Google Gemini":
+            selected_model = st.selectbox("모델", ["gemini-2.5-flash", "gemini-2.0-flash"])
+        elif ai_provider == "OpenAI (ChatGPT)":
+            selected_model = st.selectbox("모델", ["gpt-4o-mini", "gpt-4o"])
+        else:
+            selected_model = st.text_input(
+                "모델 명칭",
+                value="llama3",
+                placeholder="사용할 모델 이름을 입력하세요"
+            )
+
         session_key_name = f"session_api_keys_{ai_provider}"
         ls_key_name = f"api_keys_{ai_provider}"
 
@@ -99,10 +111,9 @@ with col_setup:
 
         current_keys = st.session_state[session_key_name]
 
-        st.write("---")
+        st.write("---") # UI 구분을 위한 선 추가
         st.markdown("### 🔑 API 키 관리")
 
-        # ✅ 수정된 부분: 새 키 입력창을 먼저 배치
         new_key = st.text_input(
             "새 API 키 추가",
             type="password",
@@ -114,7 +125,6 @@ with col_setup:
                 if new_key.strip() not in current_keys:
                     current_keys.append(new_key.strip())
                     set_local_storage(ls_key_name, json.dumps(current_keys))
-                    # 입력 완료 시 카운터를 1 증가시켜 완전히 새로운 빈칸을 만듦
                     st.session_state.input_key_counter += 1
                     st.rerun()
                 else:
@@ -122,9 +132,8 @@ with col_setup:
             else:
                 st.warning("키를 입력해주세요.")
 
-        st.markdown("<br>", unsafe_allow_html=True) # 약간의 여백 추가
+        st.markdown("<br>", unsafe_allow_html=True) 
 
-        # ✅ 수정된 부분: 등록된 키 목록을 입력창 아래로 이동
         if current_keys:
             st.success(f"✅ 등록된 키: {len(current_keys)}개")
             st.caption("위에서부터 순서대로 사용되며, 할당량 초과 시 자동으로 다음 키로 전환됩니다.")
@@ -144,19 +153,6 @@ with col_setup:
                 st.rerun()
         else:
             st.info("등록된 키가 없습니다.")
-
-        # 모델 선택
-        st.write("---")
-        if ai_provider == "Google Gemini":
-            selected_model = st.selectbox("모델", ["gemini-2.5-flash", "gemini-2.0-flash"])
-        elif ai_provider == "OpenAI (ChatGPT)":
-            selected_model = st.selectbox("모델", ["gpt-4o-mini", "gpt-4o"])
-        else:
-            selected_model = st.text_input(
-                "모델 명칭",
-                value="llama3",
-                placeholder="사용할 모델 이름을 입력하세요"
-            )
 
 # --- 3. 사이드바: 대본 설정 ---
 with st.sidebar:
