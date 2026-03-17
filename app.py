@@ -70,7 +70,8 @@ with col_title:
 
 with col_setup:
     with st.popover("⚙️ AI 설정"):
-        ai_provider = st.selectbox("사용할 AI 서비스", AI_PROVIDERS)
+        # ✅ key를 추가하여 탭 이동 및 새로고침 시에도 값 유지
+        ai_provider = st.selectbox("사용할 AI 서비스", AI_PROVIDERS, key="ai_provider_state")
 
         if ai_provider == "기타 / 로컬 AI (OpenAI 호환)":
             st.session_state.custom_url = st.text_input(
@@ -79,10 +80,11 @@ with col_setup:
                 placeholder="예: http://localhost:11434/v1"
             )
 
+        # ✅ 모델 선택창도 상태가 날아가지 않도록 key 지정
         if ai_provider == "Google Gemini":
-            selected_model = st.selectbox("모델", ["gemini-2.5-flash", "gemini-2.0-flash"])
+            selected_model = st.selectbox("모델", ["gemini-2.5-flash", "gemini-2.0-flash"], key="gemini_model_state")
         elif ai_provider == "OpenAI (ChatGPT)":
-            selected_model = st.selectbox("모델", ["gpt-4o-mini", "gpt-4o"])
+            selected_model = st.selectbox("모델", ["gpt-4o-mini", "gpt-4o"], key="openai_model_state")
         else:
             selected_model = st.text_input(
                 "모델 명칭",
@@ -151,9 +153,10 @@ with col_setup:
 # --- 3. 사이드바: 대본 설정 ---
 with st.sidebar:
     st.markdown("### 🎭 대본 설정")
-    user_gender = st.radio("나의 성별", ["남성", "여성"], horizontal=True)
+    # ✅ 사이드바 요소들이 st.rerun() 도중에 증발하지 않도록 각각 고유 key 부여
+    user_gender = st.radio("나의 성별", ["남성", "여성"], horizontal=True, key="user_gender_state")
     main_cat_list = ["랜덤 선택"] + list(CATEGORIES.keys())
-    main_category = st.selectbox("🎯 대분류 선택", main_cat_list)
+    main_category = st.selectbox("🎯 대분류 선택", main_cat_list, key="main_category_state")
 
     if main_category != st.session_state.prev_main_category:
         st.session_state.current_script = ""
@@ -163,7 +166,8 @@ with st.sidebar:
     if main_category != "랜덤 선택":
         sub_items = CATEGORIES.get(main_category, [])
         if sub_items:
-            sub_category = st.selectbox("📂 세부 항목", ["랜덤"] + sub_items)
+            # ✅ 대분류 항목에 맞춰 동적으로 세부 항목 key 생성
+            sub_category = st.selectbox("📂 세부 항목", ["랜덤"] + sub_items, key=f"sub_category_state_{main_category}")
 
     has_partner = main_category in ["애니메이션", "라디오 드라마"] and st.checkbox("상대 배역 포함", value=True)
 
@@ -181,14 +185,12 @@ def call_ai(prompt):
                 client = genai.Client(api_key=key)
                 res = client.models.generate_content(model=selected_model, contents=prompt).text
             elif ai_provider == "OpenAI (ChatGPT)":
-                # ✅ 무한 로딩을 막기 위해 30초 타임아웃 강제 설정
                 client = OpenAI(api_key=key, timeout=30.0)
                 res = client.chat.completions.create(
                     model=selected_model,
                     messages=[{"role": "user", "content": prompt}]
                 ).choices[0].message.content
             else:
-                # ✅ 로컬 AI의 경우 서버가 닫혀있으면 무한대기 하므로 타임아웃 필수
                 client = OpenAI(api_key=key, base_url=st.session_state.custom_url, timeout=30.0)
                 res = client.chat.completions.create(
                     model=selected_model,
@@ -216,7 +218,6 @@ def call_ai(prompt):
                     break
                     
             else:
-                # 타임아웃 에러 처리
                 if "timeout" in error_msg:
                     last_error = "API_ERROR:서버 응답 시간 초과 (30초)"
                 else:
@@ -261,12 +262,10 @@ else:
 ### 📋 캐릭터 정보
 ### 📖 연습 대본
 """
-        # ✅ st.spinner 블록 최소화 및 rerun 제거를 통한 무한 대기 현상 해결
         result = None
         with st.spinner("AI가 연습용 대본을 생성중입니다... (네트워크 상태에 따라 최대 30초 소요)"):
             result = call_ai(prompt)
 
-        # 결과 처리 로직을 스피너 밖으로 분리
         if result == "NO_KEYS":
             st.error("API 키가 없습니다. AI 설정에서 키를 등록해주세요.")
         elif result == "API_KEY_INVALID":
@@ -279,9 +278,7 @@ else:
             if result:
                 result = result.replace("\\n", "\n")
                 st.session_state.current_script = result
-                # 🚨 주의: 무한 로딩 버그 방지를 위해 st.rerun()을 쓰지 않습니다.
 
-# 코드가 자연스럽게 흘러 내려와서 대본을 화면에 렌더링합니다.
 if st.session_state.current_script:
     st.markdown(st.session_state.current_script)
     st.divider()
