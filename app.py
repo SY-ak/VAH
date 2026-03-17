@@ -51,7 +51,7 @@ if "prev_main_category" not in st.session_state:
     st.session_state.prev_main_category = "랜덤 선택"
 if "custom_url" not in st.session_state:
     st.session_state.custom_url = ""
-# ✅ 입력창 초기화를 위한 카운터 변수 추가
+# 입력창 초기화를 위한 카운터 변수
 if "input_key_counter" not in st.session_state:
     st.session_state.input_key_counter = 0
 
@@ -102,6 +102,29 @@ with col_setup:
         st.write("---")
         st.markdown("### 🔑 API 키 관리")
 
+        # ✅ 수정된 부분: 새 키 입력창을 먼저 배치
+        new_key = st.text_input(
+            "새 API 키 추가",
+            type="password",
+            placeholder="sk-... 또는 AIza...",
+            key=f"new_key_input_{st.session_state.input_key_counter}" 
+        )
+        if st.button("➕ 등록하기", use_container_width=True):
+            if new_key and new_key.strip():
+                if new_key.strip() not in current_keys:
+                    current_keys.append(new_key.strip())
+                    set_local_storage(ls_key_name, json.dumps(current_keys))
+                    # 입력 완료 시 카운터를 1 증가시켜 완전히 새로운 빈칸을 만듦
+                    st.session_state.input_key_counter += 1
+                    st.rerun()
+                else:
+                    st.warning("이미 등록된 키입니다.")
+            else:
+                st.warning("키를 입력해주세요.")
+
+        st.markdown("<br>", unsafe_allow_html=True) # 약간의 여백 추가
+
+        # ✅ 수정된 부분: 등록된 키 목록을 입력창 아래로 이동
         if current_keys:
             st.success(f"✅ 등록된 키: {len(current_keys)}개")
             st.caption("위에서부터 순서대로 사용되며, 할당량 초과 시 자동으로 다음 키로 전환됩니다.")
@@ -121,27 +144,6 @@ with col_setup:
                 st.rerun()
         else:
             st.info("등록된 키가 없습니다.")
-
-        # ✅ 수정된 부분: key에 카운터 값을 붙여 동적으로 변경되게 함
-        new_key = st.text_input(
-            "새 API 키 추가",
-            type="password",
-            placeholder="sk-... 또는 AIza...",
-            key=f"new_key_input_{st.session_state.input_key_counter}" 
-        )
-        if st.button("➕ 등록하기", use_container_width=True):
-            if new_key and new_key.strip():
-                if new_key.strip() not in current_keys:
-                    current_keys.append(new_key.strip())
-                    set_local_storage(ls_key_name, json.dumps(current_keys))
-                    
-                    # ✅ 수정된 부분: 입력 완료 시 카운터를 1 증가시켜 완전히 새로운 빈칸을 만듦
-                    st.session_state.input_key_counter += 1
-                    st.rerun()
-                else:
-                    st.warning("이미 등록된 키입니다.")
-            else:
-                st.warning("키를 입력해주세요.")
 
         # 모델 선택
         st.write("---")
