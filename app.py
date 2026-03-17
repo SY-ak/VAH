@@ -80,7 +80,6 @@ with col_setup:
         ls_key_name = f"api_key_{ai_provider}"
 
         # 앱 시작 시 localStorage → session_state로 한 번만 복원
-        # (session_state가 비어있을 때만 시도)
         if not st.session_state[session_key_name]:
             ls_val = get_local_storage(ls_key_name)
             if ls_val:
@@ -117,9 +116,7 @@ with col_setup:
             )
             if st.button("➕ 등록하기", use_container_width=True):
                 if new_key and new_key.strip():
-                    # session_state에 즉시 저장 (타이밍 문제 해결 핵심)
                     st.session_state[session_key_name] = new_key.strip()
-                    # localStorage에도 백업 저장 (탭 닫아도 유지)
                     set_local_storage(ls_key_name, new_key.strip())
                     st.session_state.show_key_input = False
                     st.rerun()
@@ -204,6 +201,10 @@ else:
         p_style = "2인극" if has_partner else "1인극"
         genre_guide = GENRE_GUIDES.get(final_main, "")
 
+        # ✅ 수정된 부분: 파이썬에서 4가지 연령대 중 하나를 동일한 확률로 선택
+        age_categories = ["소년/소녀 (10대 이하)", "청년 (20~30대)", "중년 (40~50대)", "노년 (60대 이상)"]
+        target_age_group = random.choice(age_categories)
+
         prompt = f"""
 성우 공채 전문 작가로서 [{final_main}] 장르 대본을 집필하라.
 장르: {final_main} {sub_text}, 스타일: {p_style}.
@@ -211,7 +212,7 @@ else:
 [작성 지침]:
 1. 캐릭터 설정: **이름 (나이, 성별, 외형, 말투)** 형식으로 한 줄 요약하라.
    - 필수 조건 1: 메인 캐릭터의 성별은 반드시 **{user_gender}**으로 설정하라. (2인극일 경우 최소 1명은 {user_gender}이어야 함)
-   - 필수 조건 2: 캐릭터의 나이는 10대부터 90대 사이에서 무작위로, 폭넓고 다양하게 설정하라.
+   - 필수 조건 2: 메인 캐릭터의 연령대는 반드시 **{target_age_group}** 캐릭터로만 설정하라.
 2. 대사는 7~10줄 내외로 작성하며, 텍스트에 '\\n' 기호를 직접 쓰지 말고 실제로 호흡 단위마다 줄바꿈(엔터)을 빈번하게 적용하여 문단을 나누어라.
 3. 지문은 `:gray[*(지문)*]` 형식으로 1~2단어 이내로만, 대본 전체에서 2~3회만 아주 드물게 사용하라.
 4. 이름 색상: 2인극일 경우 첫 번째 캐릭터는 **:blue[이름]**, 두 번째 캐릭터는 **:green[이름]**으로 표시하라. 1인극은 **:blue[이름]**만 사용.
@@ -232,7 +233,6 @@ else:
             elif result.startswith("API_ERROR:"):
                 st.error(f"오류 발생: {result.replace('API_ERROR:', '')}")
             else:
-                # AI가 혹시라도 텍스트 '\n'을 출력했을 경우를 대비해 실제 줄바꿈으로 치환
                 result = result.replace("\\n", "\n")
                 st.session_state.current_script = result
                 st.rerun()
