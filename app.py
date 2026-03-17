@@ -1,5 +1,5 @@
 import streamlit as st
-import json  # 다중 키 저장을 위해 추가됨
+import json
 from google import genai
 from openai import OpenAI
 import speech_recognition as sr
@@ -44,7 +44,7 @@ GENRE_GUIDES = {
 
 AI_PROVIDERS = ["Google Gemini", "OpenAI (ChatGPT)", "기타 / 로컬 AI (OpenAI 호환)"]
 
-# 세션 상태 초기화 (다중 키 지원으로 변경)
+# 세션 상태 초기화
 if "current_script" not in st.session_state:
     st.session_state.current_script = ""
 if "prev_main_category" not in st.session_state:
@@ -90,7 +90,6 @@ with col_setup:
                     try:
                         st.session_state[f"session_api_keys_{p}"] = json.loads(ls_val)
                     except json.JSONDecodeError:
-                        # 예전 버전의 단일 문자열 키를 배열로 자동 업그레이드
                         if ls_val.strip():
                             st.session_state[f"session_api_keys_{p}"] = [ls_val.strip()]
             st.session_state.keys_loaded = True
@@ -132,6 +131,8 @@ with col_setup:
                 if new_key.strip() not in current_keys:
                     current_keys.append(new_key.strip())
                     set_local_storage(ls_key_name, json.dumps(current_keys))
+                    # ✅ 수정된 부분: 키 등록 성공 시 입력창 내용 초기화
+                    st.session_state["new_key_input"] = "" 
                     st.rerun()
                 else:
                     st.warning("이미 등록된 키입니다.")
@@ -195,21 +196,19 @@ def call_ai(prompt):
                     model=selected_model,
                     messages=[{"role": "user", "content": prompt}]
                 ).choices[0].message.content
-            return res  # 성공하면 바로 대본 반환
+            return res 
             
         except Exception as e:
             error_msg = str(e).lower()
             
-            # 에러 확실히 분류: 할당량(Quota) 초과 문제인지 검사
             if "quota" in error_msg or "limit" in error_msg or "429" in error_msg or "exhausted" in error_msg:
                 last_error = "API_QUOTA_EXHAUSTED"
                 if i < len(keys) - 1:
                     st.toast(f"⚠️ {i+1}번 키 할당량 초과. {i+2}번 키로 자동 전환하여 시도합니다...", icon="🔄")
-                    continue  # 다음 키로 루프 계속
+                    continue 
                 else:
-                    break  # 더 이상 남은 키가 없으면 종료
+                    break 
             
-            # 에러 확실히 분류: 인증(Invalid Key) 문제인지 검사
             elif "auth" in error_msg or "api key" in error_msg or "invalid" in error_msg or "401" in error_msg or "403" in error_msg:
                 last_error = "API_KEY_INVALID"
                 if i < len(keys) - 1:
@@ -218,12 +217,11 @@ def call_ai(prompt):
                 else:
                     break
                     
-            # 그 외 예상치 못한 서버 오류 등
             else:
                 last_error = f"API_ERROR:{str(e)}"
                 break 
 
-    return last_error  # 모든 키가 실패했거나 치명적 오류 시 반환
+    return last_error 
 
 # --- 5. 대본 생성 메인 로직 ---
 current_keys_main = st.session_state.get(f"session_api_keys_{ai_provider}", [])
