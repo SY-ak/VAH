@@ -62,7 +62,27 @@ for p in AI_PROVIDERS:
     if skey not in st.session_state:
         st.session_state[skey] = []
 
-# --- 2. 상단 헤더 및 AI 설정 (Popover) ---
+# ✅ 사이드바 코드를 상단으로 끌어올려 값 증발 방지
+# --- 2. 사이드바: 대본 설정 ---
+with st.sidebar:
+    st.markdown("### 🎭 대본 설정")
+    user_gender = st.radio("나의 성별", ["남성", "여성"], horizontal=True, key="user_gender_state")
+    main_cat_list = ["랜덤 선택"] + list(CATEGORIES.keys())
+    main_category = st.selectbox("🎯 대분류 선택", main_cat_list, key="main_category_state")
+
+    if main_category != st.session_state.prev_main_category:
+        st.session_state.current_script = ""
+        st.session_state.prev_main_category = main_category
+
+    sub_category = None
+    if main_category != "랜덤 선택":
+        sub_items = CATEGORIES.get(main_category, [])
+        if sub_items:
+            sub_category = st.selectbox("📂 세부 항목", ["랜덤"] + sub_items, key=f"sub_category_state_{main_category}")
+
+    has_partner = main_category in ["애니메이션", "라디오 드라마"] and st.checkbox("상대 배역 포함", value=True, key="has_partner_state")
+
+# --- 3. 상단 헤더 및 AI 설정 (Popover) ---
 col_title, col_setup = st.columns([4, 1])
 
 with col_title:
@@ -70,17 +90,16 @@ with col_title:
 
 with col_setup:
     with st.popover("⚙️ AI 설정"):
-        # ✅ key를 추가하여 탭 이동 및 새로고침 시에도 값 유지
         ai_provider = st.selectbox("사용할 AI 서비스", AI_PROVIDERS, key="ai_provider_state")
 
         if ai_provider == "기타 / 로컬 AI (OpenAI 호환)":
             st.session_state.custom_url = st.text_input(
                 "API Base URL",
                 value=st.session_state.custom_url,
-                placeholder="예: http://localhost:11434/v1"
+                placeholder="예: http://localhost:11434/v1",
+                key="custom_url_state"
             )
 
-        # ✅ 모델 선택창도 상태가 날아가지 않도록 key 지정
         if ai_provider == "Google Gemini":
             selected_model = st.selectbox("모델", ["gemini-2.5-flash", "gemini-2.0-flash"], key="gemini_model_state")
         elif ai_provider == "OpenAI (ChatGPT)":
@@ -89,7 +108,8 @@ with col_setup:
             selected_model = st.text_input(
                 "모델 명칭",
                 value="llama3",
-                placeholder="사용할 모델 이름을 입력하세요"
+                placeholder="사용할 모델 이름을 입력하세요",
+                key="local_model_state"
             )
 
         session_key_name = f"session_api_keys_{ai_provider}"
@@ -123,6 +143,7 @@ with col_setup:
                     current_keys.append(new_key.strip())
                     set_local_storage(ls_key_name, json.dumps(current_keys))
                     st.session_state.input_key_counter += 1
+                    # 여기서 rerun이 발생해도 이미 사이드바 코드를 읽은 후라 값이 안전하게 보존됩니다.
                     st.rerun()
                 else:
                     st.warning("이미 등록된 키입니다.")
@@ -149,27 +170,6 @@ with col_setup:
                 st.rerun()
         else:
             st.info("등록된 키가 없습니다.")
-
-# --- 3. 사이드바: 대본 설정 ---
-with st.sidebar:
-    st.markdown("### 🎭 대본 설정")
-    # ✅ 사이드바 요소들이 st.rerun() 도중에 증발하지 않도록 각각 고유 key 부여
-    user_gender = st.radio("나의 성별", ["남성", "여성"], horizontal=True, key="user_gender_state")
-    main_cat_list = ["랜덤 선택"] + list(CATEGORIES.keys())
-    main_category = st.selectbox("🎯 대분류 선택", main_cat_list, key="main_category_state")
-
-    if main_category != st.session_state.prev_main_category:
-        st.session_state.current_script = ""
-        st.session_state.prev_main_category = main_category
-
-    sub_category = None
-    if main_category != "랜덤 선택":
-        sub_items = CATEGORIES.get(main_category, [])
-        if sub_items:
-            # ✅ 대분류 항목에 맞춰 동적으로 세부 항목 key 생성
-            sub_category = st.selectbox("📂 세부 항목", ["랜덤"] + sub_items, key=f"sub_category_state_{main_category}")
-
-    has_partner = main_category in ["애니메이션", "라디오 드라마"] and st.checkbox("상대 배역 포함", value=True)
 
 # --- 4. AI 호출 및 자동 키 전환 함수 ---
 def call_ai(prompt):
