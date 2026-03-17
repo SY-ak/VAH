@@ -51,11 +51,9 @@ if "prev_main_category" not in st.session_state:
     st.session_state.prev_main_category = "랜덤 선택"
 if "custom_url" not in st.session_state:
     st.session_state.custom_url = ""
-# 입력창 초기화를 위한 카운터 변수
 if "input_key_counter" not in st.session_state:
     st.session_state.input_key_counter = 0
 
-# 각 AI 서비스별 키 리스트 초기화 및 로컬 스토리지에서 한 번만 불러오기
 if "keys_loaded" not in st.session_state:
     st.session_state.keys_loaded = False
 
@@ -74,7 +72,6 @@ with col_setup:
     with st.popover("⚙️ AI 설정"):
         ai_provider = st.selectbox("사용할 AI 서비스", AI_PROVIDERS)
 
-        # 로컬 AI 전용 설정
         if ai_provider == "기타 / 로컬 AI (OpenAI 호환)":
             st.session_state.custom_url = st.text_input(
                 "API Base URL",
@@ -82,7 +79,6 @@ with col_setup:
                 placeholder="예: http://localhost:11434/v1"
             )
 
-        # ✅ 수정된 부분: 모델 선택을 AI 서비스 선택 바로 아래로 이동
         if ai_provider == "Google Gemini":
             selected_model = st.selectbox("모델", ["gemini-2.5-flash", "gemini-2.0-flash"])
         elif ai_provider == "OpenAI (ChatGPT)":
@@ -97,7 +93,6 @@ with col_setup:
         session_key_name = f"session_api_keys_{ai_provider}"
         ls_key_name = f"api_keys_{ai_provider}"
 
-        # 앱 시작 시 localStorage에서 키 배열 복원
         if not st.session_state.keys_loaded:
             for p in AI_PROVIDERS:
                 ls_val = get_local_storage(f"api_keys_{p}")
@@ -111,7 +106,7 @@ with col_setup:
 
         current_keys = st.session_state[session_key_name]
 
-        st.write("---") # UI 구분을 위한 선 추가
+        st.write("---")
         st.markdown("### 🔑 API 키 관리")
 
         new_key = st.text_input(
@@ -138,7 +133,6 @@ with col_setup:
             st.success(f"✅ 등록된 키: {len(current_keys)}개")
             st.caption("위에서부터 순서대로 사용되며, 할당량 초과 시 자동으로 다음 키로 전환됩니다.")
             
-            # 다중 키 목록 보여주기 및 삭제
             for i, k in enumerate(current_keys):
                 c1, c2 = st.columns([4, 1])
                 c1.code(f"[{i+1}] {k[:6]}...{k[-4:]}")
@@ -187,13 +181,15 @@ def call_ai(prompt):
                 client = genai.Client(api_key=key)
                 res = client.models.generate_content(model=selected_model, contents=prompt).text
             elif ai_provider == "OpenAI (ChatGPT)":
-                client = OpenAI(api_key=key)
+                # ✅ 무한 로딩을 막기 위해 30초 타임아웃 강제 설정
+                client = OpenAI(api_key=key, timeout=30.0)
                 res = client.chat.completions.create(
                     model=selected_model,
                     messages=[{"role": "user", "content": prompt}]
                 ).choices[0].message.content
             else:
-                client = OpenAI(api_key=key, base_url=st.session_state.custom_url)
+                # ✅ 로컬 AI의 경우 서버가 닫혀있으면 무한대기 하므로 타임아웃 필수
+                client = OpenAI(api_key=key, base_url=st.session_state.custom_url, timeout=30.0)
                 res = client.chat.completions.create(
                     model=selected_model,
                     messages=[{"role": "user", "content": prompt}]
@@ -220,7 +216,11 @@ def call_ai(prompt):
                     break
                     
             else:
-                last_error = f"API_ERROR:{str(e)}"
+                # 타임아웃 에러 처리
+                if "timeout" in error_msg:
+                    last_error = "API_ERROR:서버 응답 시간 초과 (30초)"
+                else:
+                    last_error = f"API_ERROR:{str(e)}"
                 break 
 
     return last_error 
@@ -261,21 +261,27 @@ else:
 ### 📋 캐릭터 정보
 ### 📖 연습 대본
 """
-        with st.spinner("AI가 연습용 대본을 생성중입니다..."):
+        # ✅ st.spinner 블록 최소화 및 rerun 제거를 통한 무한 대기 현상 해결
+        result = None
+        with st.spinner("AI가 연습용 대본을 생성중입니다... (네트워크 상태에 따라 최대 30초 소요)"):
             result = call_ai(prompt)
-            if result == "NO_KEYS":
-                st.error("API 키가 없습니다. AI 설정에서 키를 등록해주세요.")
-            elif result == "API_KEY_INVALID":
-                st.error("🔑 등록된 API 키가 유효하지 않습니다. 오타가 없는지 확인해주세요.")
-            elif result == "API_QUOTA_EXHAUSTED":
-                st.error("🚫 등록된 모든 API 키의 할당량이 소진되었습니다. 새로운 키를 추가하거나 잠시 후 다시 시도해주세요.")
-            elif result.startswith("API_ERROR:"):
-                st.error(f"오류 발생: {result.replace('API_ERROR:', '')}")
-            else:
+
+        # 결과 처리 로직을 스피너 밖으로 분리
+        if result == "NO_KEYS":
+            st.error("API 키가 없습니다. AI 설정에서 키를 등록해주세요.")
+        elif result == "API_KEY_INVALID":
+            st.error("🔑 등록된 API 키가 유효하지 않습니다. 오타가 없는지 확인해주세요.")
+        elif result == "API_QUOTA_EXHAUSTED":
+            st.error("🚫 등록된 모든 API 키의 할당량이 소진되었습니다. 새로운 키를 추가하거나 잠시 후 다시 시도해주세요.")
+        elif result and result.startswith("API_ERROR:"):
+            st.error(f"오류 발생: {result.replace('API_ERROR:', '')}")
+        else:
+            if result:
                 result = result.replace("\\n", "\n")
                 st.session_state.current_script = result
-                st.rerun()
+                # 🚨 주의: 무한 로딩 버그 방지를 위해 st.rerun()을 쓰지 않습니다.
 
+# 코드가 자연스럽게 흘러 내려와서 대본을 화면에 렌더링합니다.
 if st.session_state.current_script:
     st.markdown(st.session_state.current_script)
     st.divider()
