@@ -51,6 +51,9 @@ if "prev_main_category" not in st.session_state:
     st.session_state.prev_main_category = "랜덤 선택"
 if "custom_url" not in st.session_state:
     st.session_state.custom_url = ""
+# ✅ 입력창 초기화를 위한 카운터 변수 추가
+if "input_key_counter" not in st.session_state:
+    st.session_state.input_key_counter = 0
 
 # 각 AI 서비스별 키 리스트 초기화 및 로컬 스토리지에서 한 번만 불러오기
 if "keys_loaded" not in st.session_state:
@@ -119,20 +122,21 @@ with col_setup:
         else:
             st.info("등록된 키가 없습니다.")
 
-        # 여러 키를 연속해서 추가할 수 있는 입력창
+        # ✅ 수정된 부분: key에 카운터 값을 붙여 동적으로 변경되게 함
         new_key = st.text_input(
             "새 API 키 추가",
             type="password",
             placeholder="sk-... 또는 AIza...",
-            key="new_key_input"
+            key=f"new_key_input_{st.session_state.input_key_counter}" 
         )
         if st.button("➕ 등록하기", use_container_width=True):
             if new_key and new_key.strip():
                 if new_key.strip() not in current_keys:
                     current_keys.append(new_key.strip())
                     set_local_storage(ls_key_name, json.dumps(current_keys))
-                    # ✅ 수정된 부분: 키 등록 성공 시 입력창 내용 초기화
-                    st.session_state["new_key_input"] = "" 
+                    
+                    # ✅ 수정된 부분: 입력 완료 시 카운터를 1 증가시켜 완전히 새로운 빈칸을 만듦
+                    st.session_state.input_key_counter += 1
                     st.rerun()
                 else:
                     st.warning("이미 등록된 키입니다.")
