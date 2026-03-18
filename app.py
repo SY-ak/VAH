@@ -59,7 +59,7 @@ PERSONALITIES = [
     "명랑, 긍정 에너지가 넘치고 해맑은", "다정다감, 따뜻하고 배려심 깊은", 
     "순수, 아이같이 티 없고 솔직한", "친절, 누구에게나 상냥한 톤의", 
     "호탕, 시원시원하고 털털한", "열정적, 꿈을 향해 달리는 희망찬",
-    "듬직, 언제나 내 편이 되어주는 든든한", "당돌, 할 말 상상 다 하는 사이다 같은",
+    "듬직, 언제나 내 편이 되어주는 든든한", "당돌, 할 말은 다 하는 사이다 같은",
     # 매력 / 개성 / 여유
     "능글맞은, 여유롭고 장난기 많은", "우아, 기품 있고 세련된 말투의",
     "허당, 완벽해 보이나 은근히 빈틈이 있는", "카리스마, 좌중을 압도하는 리더형",
@@ -115,8 +115,8 @@ with st.sidebar:
     has_partner = main_category in ["애니메이션", "라디오 드라마"] and st.checkbox("상대 배역 포함", value=True, key="has_partner_state")
 
 # --- 3. 상단 헤더 및 AI 설정 (Popover) ---
-# 🚨 버튼 순서를 변경하기 위해 col_setup과 col_info의 배치 순서를 바꿨습니다.
-col_title, col_setup, col_info = st.columns([5, 1.5, 1.5])
+# 🚨 컬럼 비율을 조정하여 타이틀 공간을 넓히고 두 버튼을 오른쪽 끝으로 밀어냈습니다.
+col_title, col_setup, col_info = st.columns([7, 1, 1])
 
 with col_title:
     st.title("🎙️ AI 대본 생성기")
@@ -203,7 +203,6 @@ with col_setup:
         else:
             st.info("등록된 키가 없습니다.")
 
-# 🚨 오른쪽 끝으로 이동한 'API 키란?' 섹션
 with col_info:
     with st.popover("❓ API 키란?"):
         st.markdown("### 🔑 API 키란?")
