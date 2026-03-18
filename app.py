@@ -262,8 +262,16 @@ else:
         p_style = "2인극" if has_partner else "1인극"
         genre_guide = GENRE_GUIDES.get(final_main, "")
 
-        age_categories = ["소년/소녀 (10대 이하)", "청년 (20~30대)", "중년 (40~50대)", "노년 (60대 이상)"]
-        target_age_group = random.choice(age_categories)
+        # 🚨 나이대 4구간 중 하나를 선택한 뒤, 해당 구간 안에서 구체적인 나이를 랜덤으로 뽑습니다.
+        age_ranges = [
+            (7, 19),   # 소년/소녀 (10대 이하)
+            (20, 39),  # 청년 (20~30대)
+            (40, 59),  # 중년 (40~50대)
+            (60, 85)   # 노년 (60대 이상)
+        ]
+        selected_range = random.choice(age_ranges)
+        specific_age = random.randint(selected_range[0], selected_range[1])
+        target_age_group = f"{specific_age}세"
         
         target_personality = random.choice(PERSONALITIES)
 
@@ -273,7 +281,7 @@ else:
 
 [강제 부여 캐릭터 설정] - (성우의 연기 미션용)
 - 성별: {user_gender}
-- 연령대: {target_age_group}
+- 연령: {target_age_group}
 - 성격 및 말투 컨셉: {target_personality}
 
 [핵심 지침 (매우 중요 - 절대 엄수)]:
