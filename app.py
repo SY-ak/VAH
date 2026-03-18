@@ -115,10 +115,26 @@ with st.sidebar:
     has_partner = main_category in ["애니메이션", "라디오 드라마"] and st.checkbox("상대 배역 포함", value=True, key="has_partner_state")
 
 # --- 3. 상단 헤더 및 AI 설정 (Popover) ---
-col_title, col_setup = st.columns([4, 1])
+# 🚨 API 키 설명 버튼을 배치하기 위해 컬럼 비율 조정
+col_title, col_info, col_setup = st.columns([5, 1.5, 1.5])
 
 with col_title:
     st.title("🎙️ AI 대본 생성기")
+
+# 🚨 새로 추가된 'API 키란?' 섹션
+with col_info:
+    with st.popover("❓ API 키란?"):
+        st.markdown("### 🔑 API 키란?")
+        st.write("API 키는 AI 서비스를 사용하기 위해 필요한 일종의 **'출입증'**입니다. 이 앱이 Google이나 OpenAI의 인공지능 모델에 접속해서 대본을 생성할 수 있도록 권한을 부여하는 역할을 합니다.")
+        
+        st.divider()
+        
+        st.markdown("### 🌟 Gemini API 키 무료 발급 가이드")
+        st.markdown("1. [Google AI Studio (링크)](https://aistudio.google.com/app/apikey)에 접속하여 구글 계정으로 로그인합니다.")
+        st.markdown("2. 화면 좌측 또는 상단의 **'Get API key'** 메뉴를 클릭합니다.")
+        st.markdown("3. 파란색 **'Create API key'** 버튼을 누르고 새 프로젝트에서 키를 생성합니다.")
+        st.markdown("4. 화면에 나타난 긴 문자열(`AIza...`로 시작)을 복사합니다.")
+        st.markdown("5. 현재 창으로 돌아와 옆의 **[⚙️ AI 설정]** 메뉴를 누르고 복사한 키를 등록해주세요!")
 
 with col_setup:
     with st.popover("⚙️ AI 설정"):
@@ -273,7 +289,6 @@ else:
         
         genre_writing_guide = GENRE_WRITING_GUIDES.get(final_main, "")
         
-        # 🚨 여기서 핵심 개념 2가지를 랜덤으로 뽑습니다. (예: '기억' + '우주')
         kw1, kw2 = random.sample(CORE_KEYWORDS, 2)
 
         age_ranges = [
